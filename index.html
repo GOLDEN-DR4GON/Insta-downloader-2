@@ -20,17 +20,19 @@
             align-items: center;
             justify-content: center;
             padding: 1.2rem;
-            /* dynamic background – clear blend */
+            /* high quality background – dynamically blended */
             background-image: url('https://i.ibb.co/V0BL2Fwm/02239528-fe28-45b2-8d4a-ced420932bfe.jpg');
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
-            background-blend-mode: normal;
+            background-blend-mode: overlay;
             background-color: rgba(8, 6, 18, 0.50);
             transition: background-color 0.4s ease;
+            /* prevent background from being blurry */
+            image-rendering: auto;
         }
 
-        /* ───── main card – clear glassmorphism, no layered feel ───── */
+        /* ───── main card – clear glassmorphism ───── */
         .card {
             max-width: 520px;
             width: 100%;
@@ -44,7 +46,6 @@
                 0 0 0 1px rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.04);
             transition: all 0.3s ease;
-            /* single glass layer – no pseudo elements for extra depth */
         }
 
         /* ───── header ───── */
@@ -159,7 +160,7 @@
             letter-spacing: 0.3px;
         }
 
-        /* ───── download button – normal, no arrow ───── */
+        /* ───── download button ───── */
         .btn-download {
             background: linear-gradient(145deg, rgba(167, 139, 250, 0.75), rgba(124, 95, 216, 0.75));
             backdrop-filter: blur(4px);
@@ -360,7 +361,6 @@
             }
         }
 
-        /* extra small devices */
         @media (max-width: 380px) {
             .card {
                 padding: 1.2rem 0.9rem 1rem;
@@ -465,14 +465,59 @@
                 }
 
                 const fullUrl = BASE_ENDPOINT + encodeURIComponent(rawUrl);
-                try {
-                    window.open(fullUrl, '_blank');
+                
+                // FIX: Use fetch to actually download the file instead of just opening in new tab
+                // This properly handles the download instead of just redirecting
+                setStatus('⏳ Downloading... please wait');
+
+                fetch(fullUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'video/*, application/octet-stream, */*'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    // Get filename from Content-Disposition header or use default
+                    let filename = 'instagram_reel.mp4';
+                    const disposition = response.headers.get('content-disposition');
+                    if (disposition && disposition.indexOf('filename=') !== -1) {
+                        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+                        if (matches != null && matches[1]) {
+                            filename = matches[1].replace(/['"]/g, '');
+                        }
+                    }
+                    return response.blob().then(blob => {
+                        return { blob, filename };
+                    });
+                })
+                .then(({ blob, filename }) => {
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
                     const short = rawUrl.length > 45 ? rawUrl.substring(0, 45) + '…' : rawUrl;
-                    setStatus(`✅ Download started for: ${short}`);
-                } catch (e) {
-                    setStatus('❌ Could not open download. Check endpoint.', true);
-                    console.warn('Download error:', e);
-                }
+                    setStatus(`✅ Downloaded: ${short}`);
+                })
+                .catch(error => {
+                    console.error('Download error:', error);
+                    // Fallback: try opening in new tab if fetch fails
+                    try {
+                        window.open(fullUrl, '_blank');
+                        const short = rawUrl.length > 45 ? rawUrl.substring(0, 45) + '…' : rawUrl;
+                        setStatus(`✅ Download started for: ${short}`);
+                    } catch (e) {
+                        setStatus('❌ Could not download. Check endpoint or try again.', true);
+                    }
+                });
             }
 
             downloadBtn.addEventListener('click', handleDownload);
